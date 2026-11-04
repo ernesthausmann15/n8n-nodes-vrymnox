@@ -1,0 +1,150 @@
+{
+  "name": "Vrymdor AI Node on n8n Cloud: remove PII",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Vrymdor AI Node on n8n Cloud\n1. **Credentials**, **Add credential**, **Custom Auth**, name `Vrymdor agent`, and paste `{\"body\": {\"agent_id\": \"agt_...\", \"agent_secret\": \"vrym_agent_...\"}}` with your own agent.\n2. **Start here**: paste your node address (Vrymdor app, **Home base**, **Hosted node**).\n3. **Vrymdor token**: pick the `Vrymdor agent` credential.\n4. **Execute workflow**. The last step shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`.\n\nA token lasts 10 minutes, so every run gets a new one first.",
+        "height": 380,
+        "width": 460
+      },
+      "id": "7a3ca3fb-9e28-5ceb-9a63-147cbca25b3f",
+      "name": "How to use this workflow",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        -220
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "bb2d70f1-ed44-5bc3-8483-997d321df970",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b4bec960-1ab0-5f9e-86e8-c069719e46ea",
+              "name": "node_url",
+              "value": "https://node.vrymdor.com/t/PASTE_YOUR_NODE_ID",
+              "type": "string"
+            },
+            {
+              "id": "ec978548-855c-5af4-ab3a-e12006242d7d",
+              "name": "text",
+              "value": "Please email jane@example.com about the order on card 4242 4242 4242 4242.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "36b16f36-8a06-5731-a1e2-42779b25b733",
+      "name": "Start here",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Start here').item.json.node_url }}/v1/token",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "id": "c3cd1b0c-28aa-5a1b-b0e0-501449a8caf3",
+      "name": "Vrymdor token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Start here').item.json.node_url }}/v1/node/run",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Vrymdor token').item.json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ action: { type: 'sanitize' }, input: $('Start here').item.json.text }) }}",
+        "options": {}
+      },
+      "id": "d760d4d7-9fad-5ab0-bd41-2cda158b7ac9",
+      "name": "Vrymdor: remove PII",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Start here",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start here": {
+      "main": [
+        [
+          {
+            "node": "Vrymdor token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vrymdor token": {
+      "main": [
+        [
+          {
+            "node": "Vrymdor: remove PII",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

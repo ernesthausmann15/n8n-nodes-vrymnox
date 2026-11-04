@@ -41,6 +41,19 @@ n8n stores the secret encrypted. On each run the node trades it for a short-live
 gateway's `/v1/token` endpoint; the secret itself is never sent anywhere else. The credential test
 performs the same exchange.
 
+## Example workflows (copy and paste)
+
+Two ready workflows are in [`examples/`](examples). Open the file, copy all of it, click an empty n8n canvas and
+press Ctrl+V (Cmd+V on a Mac).
+
+| File | For | What it does |
+| ---- | --- | ------------ |
+| [`vrymdor-node-workflow.json`](examples/vrymdor-node-workflow.json) | self-hosted n8n with this node installed | Sample text, then **Remove PII and Secrets**, then an optional model call through the node |
+| [`vrymdor-n8n-cloud-workflow.json`](examples/vrymdor-n8n-cloud-workflow.json) | n8n Cloud (until n8n verifies this node) | The same clean step with two HTTP Request nodes: a token, then the run |
+
+Each has a note on the canvas with its three steps. Run it and the output shows `[REDACTED:EMAIL]` and
+`[REDACTED:CREDIT_CARD]` where the sample had an email address and a card number.
+
 ## Operations
 
 | Operation | What it does |
