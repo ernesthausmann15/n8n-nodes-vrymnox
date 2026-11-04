@@ -1,0 +1,57 @@
+{
+  "name": "n8n-nodes-vrymnox",
+  "version": "1.0.0",
+  "description": "Vrymnox AI Node for n8n: run tools, model calls and webhooks through your Vrymnox gateway, with PII redaction, policy and audit on every step.",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "vrymnox",
+    "ai governance",
+    "pii",
+    "mcp"
+  ],
+  "license": "MIT",
+  "homepage": "https://docs.vrymdor.com/ai-node.html",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ernesthausmann15/n8n-nodes-vrymnox.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ernesthausmann15/n8n-nodes-vrymnox/issues"
+  },
+  "author": {
+    "name": "Vrymnox Systems LLC",
+    "email": "support@vrymdor.com"
+  },
+  "main": "index.js",
+  "files": [
+    "dist",
+    "index.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.15"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc && cp nodes/Vrymnox/vrymnox.svg dist/nodes/Vrymnox/",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/VrymnoxApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Vrymnox/Vrymnox.node.js"
+    ]
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "devDependencies": {
+    "n8n-workflow": "^2.16.0",
+    "typescript": "~5.6.0"
+  }
+}
