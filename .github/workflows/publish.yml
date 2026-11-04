@@ -23,6 +23,8 @@ jobs:
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
+      # Trusted publishing (no token) needs npm 11.5.1 or later; Node 22 ships npm 10.
+      - run: npm install -g npm@11.21.1
       - run: npm ci
       - run: npm run build --if-present
       - run: npm pack --dry-run
