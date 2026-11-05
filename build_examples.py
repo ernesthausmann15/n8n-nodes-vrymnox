@@ -95,13 +95,15 @@ def cloud() -> dict:
     nodes = [
         note(w, "How to use this workflow", (-460, -220),
              "## Vrymdor AI Node on n8n Cloud\n"
-             "1. **Credentials**, **Add credential**, **Custom Auth**, name `Vrymdor agent`, and paste "
-             "`{\"body\": {\"agent_id\": \"agt_...\", \"agent_secret\": \"vrym_agent_...\"}}` with your own agent.\n"
-             "2. **Start here**: paste your node address (Vrymdor app, **Home base**, **Hosted node**).\n"
-             "3. **Vrymdor token**: pick the `Vrymdor agent` credential.\n"
-             "4. **Execute workflow**. The last step shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`.\n\n"
-             "A token lasts 10 minutes, so every run gets a new one first.",
-             width=460, height=380),
+             "1. Open **Vrymdor token**, **Credential for Custom Auth**, **Create new credential**. Paste "
+             "`{\"body\": {\"agent_id\": \"agt_...\", \"agent_secret\": \"vrym_agent_...\"}}` with your own agent "
+             "(Vrymdor app, **AI agents**), name it `Vrymdor agent`, **Save**.\n"
+             "2. Open **Start here** and replace the **node_url** with your node address (Vrymdor app, "
+             "**Home base**, **Hosted node**), with no / at the end.\n"
+             "3. **Execute workflow**. The last step shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`.\n\n"
+             "Send everything a model will read through the node first. Your workflow keeps the real data "
+             "(an email step can still use the address); the model never sees it.",
+             width=480, height=420),
         node(w, "Start", "n8n-nodes-base.manualTrigger", 1, (0, 0), {}),
         setter(w, "Start here", (220, 0), {"node_url": NODE_URL, "text": SAMPLE}),
         node(w, "Vrymdor token", "n8n-nodes-base.httpRequest", 4.2, (440, 0), {
