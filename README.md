@@ -41,10 +41,10 @@ n8n stores the secret encrypted. On each run the node trades it for a short-live
 gateway's `/v1/token` endpoint; the secret itself is never sent anywhere else. The credential test
 performs the same exchange.
 
-## Example workflows (copy and paste)
+## Example workflows
 
-Two ready workflows are in [`examples/`](examples). Open the file, copy all of it, click an empty n8n canvas and
-press Ctrl+V (Cmd+V on a Mac).
+Two ready workflows are in [`examples/`](examples). Download the file, then in n8n create a workflow, open the
+menu at the top right, choose **Import from File** and pick the file.
 
 | File | For | What it does |
 | ---- | --- | ------------ |

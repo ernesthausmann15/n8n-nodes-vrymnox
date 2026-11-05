@@ -1,4 +1,4 @@
-"""Builds the two copy and paste n8n workflows in examples/ (python3 build_examples.py [extra output folder ...]).
+"""Builds the two n8n workflow files to import in examples/ (python3 build_examples.py [extra output folder ...]).
 
 - vrymdor-node-workflow.json: the Vrymnox community node (self-hosted n8n, Settings, Community Nodes,
   n8n-nodes-vrymnox). Start, sample text, the node removes personal data and secrets, then (off until an upstream
