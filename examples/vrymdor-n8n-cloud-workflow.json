@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Vrymdor AI Node on n8n Cloud\n1. Open **Vrymdor token**, **Credential for Custom Auth**, **Create new credential** (n8n names it **Custom Auth account**). In its JSON field paste `{\"body\": {\"agent_id\": \"agt_...\", \"agent_secret\": \"vrym_agent_...\"}}` with your own agent (Vrymdor app, **AI agents**), then **Save**.\n2. Open **Start here** and replace the **node_url** with your node address (Vrymdor app, **Home base**, **Hosted node**), with no / at the end.\n3. **Execute workflow**. The last step shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`.\n\nSend everything a model will read through the node first. Your workflow keeps the real data (an email step can still use the address); the model never sees it.",
+        "content": "## Vrymdor AI Node on n8n Cloud\n1. Open **Vrymdor AI Node** and fill in the three settings at the top: `node_url` (Vrymdor app, **Home base**, **Hosted node**), `agent_id` and `agent_secret` (Vrymdor app, **AI agents**).\n2. **Execute workflow**. The output shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`, and `vrymdor.redactions` counts them.\n3. Replace **Sample text** with your own trigger. The step cleans each item's `text` field (change `field` for another).\n\nSend everything a model will read through this step first. Your workflow keeps the real data (an email step can still use the address); the model never sees it.",
         "height": 420,
         "width": 480
       },
@@ -33,13 +33,7 @@
         "assignments": {
           "assignments": [
             {
-              "id": "b4bec960-1ab0-5f9e-86e8-c069719e46ea",
-              "name": "node_url",
-              "value": "https://node.vrymdor.com/t/PASTE_YOUR_NODE_ID",
-              "type": "string"
-            },
-            {
-              "id": "ec978548-855c-5af4-ab3a-e12006242d7d",
+              "id": "d36eb81e-d87b-5882-81ed-0481194f34ba",
               "name": "text",
               "value": "Please email jane@example.com about the order on card 4242 4242 4242 4242.",
               "type": "string"
@@ -48,8 +42,8 @@
         },
         "options": {}
       },
-      "id": "36b16f36-8a06-5731-a1e2-42779b25b733",
-      "name": "Start here",
+      "id": "b2b6534b-7a21-5a8b-b6ba-bb944eef6315",
+      "name": "Sample text",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
@@ -59,48 +53,14 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "={{ $('Start here').item.json.node_url }}/v1/token",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpCustomAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{}",
-        "options": {}
+        "jsCode": "// ============ Vrymdor AI Node: fill these in once, then save ============\nconst SETTINGS = {\n  // Your node address: the Vrymdor app, Home base, Hosted node (no / at the end).\n  node_url: 'https://node.vrymdor.com/t/PASTE_YOUR_NODE_ID',\n  // The Vrymdor app, AI agents, Register an agent.\n  agent_id: 'agt_PASTE',\n  agent_secret: 'vrym_agent_PASTE',\n  // The field of each item to clean. The cleaned text replaces it, so the next step gets it as before.\n  field: 'text',\n};\n// ========================================================================\n// Every item's field goes through your AI Node: personal data and secrets are removed and your policy applies\n// before anything reaches the next step (for example a model). The rest of the item is passed on untouched, so a\n// later step (an email step's To field, say) can still use it. Each result carries `vrymdor`: the decision and the\n// count of what was removed. A refusal stops the workflow with the node's reason.\nif (SETTINGS.node_url.includes('PASTE') || SETTINGS.agent_id.includes('PASTE') || SETTINGS.agent_secret.includes('PASTE')) {\n  throw new Error('Vrymdor AI Node: fill in node_url, agent_id and agent_secret at the top of this step.');\n}\nconst base = SETTINGS.node_url.replace(/\\/+$/, '');\nlet tok;\ntry {\n  tok = await this.helpers.httpRequest({ method: 'POST', url: `${base}/v1/token`, json: true, timeout: 15000,\n    body: { agent_id: SETTINGS.agent_id, agent_secret: SETTINGS.agent_secret } });\n} catch (err) {\n  throw new Error(`Vrymdor AI Node: no token from ${base} (check node_url, agent_id and agent_secret): ${err.message}`);\n}\nconst out = [];\nfor (const item of $input.all()) {\n  const value = item.json[SETTINGS.field];\n  if (value === undefined) throw new Error(`Vrymdor AI Node: the item has no \"${SETTINGS.field}\" field (change field in the settings).`);\n  const res = await this.helpers.httpRequest({ method: 'POST', url: `${base}/v1/node/run`, json: true, timeout: 15000,\n    headers: { Authorization: `Bearer ${tok.access_token}` }, ignoreHttpStatusErrors: true,\n    body: { node_version: '1', action: { type: 'sanitize' }, input: value, context: { platform: 'n8n' } } });\n  if (!res || !res.ok) {\n    const e = (res && res.error) || {};\n    throw new Error(`Vrymdor ${e.code || 'error'}: ${e.message || 'the node refused the request.'}`);\n  }\n  out.push({ json: { ...item.json, [SETTINGS.field]: res.output,\n    vrymdor: { decision: res.decision, redactions: res.redactions || {}, audit: res.audit || null } } });\n}\nreturn out;\n"
       },
-      "id": "c3cd1b0c-28aa-5a1b-b0e0-501449a8caf3",
-      "name": "Vrymdor token",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "4200bb6b-2ba9-5f38-9624-939789c94afa",
+      "name": "Vrymdor AI Node",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         440,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Start here').item.json.node_url }}/v1/node/run",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $('Vrymdor token').item.json.access_token }}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ action: { type: 'sanitize' }, input: $('Start here').item.json.text }) }}",
-        "options": {}
-      },
-      "id": "d760d4d7-9fad-5ab0-bd41-2cda158b7ac9",
-      "name": "Vrymdor: remove PII",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        660,
         0
       ]
     }
@@ -110,29 +70,18 @@
       "main": [
         [
           {
-            "node": "Start here",
+            "node": "Sample text",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Start here": {
+    "Sample text": {
       "main": [
         [
           {
-            "node": "Vrymdor token",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Vrymdor token": {
-      "main": [
-        [
-          {
-            "node": "Vrymdor: remove PII",
+            "node": "Vrymdor AI Node",
             "type": "main",
             "index": 0
           }

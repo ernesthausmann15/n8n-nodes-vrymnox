@@ -3,8 +3,8 @@
 - vrymdor-node-workflow.json: the Vrymnox community node (self-hosted n8n, Settings, Community Nodes,
   n8n-nodes-vrymnox). Start, sample text, the node removes personal data and secrets, then (off until an upstream
   named `anthropic` is on the gateway) a model call through the node.
-- vrymdor-n8n-cloud-workflow.json: the same with two of n8n's own HTTP Request nodes, for n8n Cloud until n8n
-  verifies the community node. The node address and the text sit in one Set node, so there is one place to paste.
+- vrymdor-n8n-cloud-workflow.json: the same as one Vrymdor step (a Code step, examples/src/vrymdor_ai_node.js), for
+  n8n Cloud until n8n verifies the community node. Its three settings are the whole setup.
 
 The files hold no credential ids and no secrets: n8n asks for the credential on the first run. Node ids are
 stable (uuid5), so a rebuild changes nothing unless the workflow changed. Text a person reads follows the repo's
@@ -21,7 +21,6 @@ HERE = Path(__file__).resolve().parent
 OUT = HERE / "examples"
 NS = uuid.UUID("6f1c9a52-3d0e-4b7a-9a61-2a8c5e0d4f17")
 SAMPLE = "Please email jane@example.com about the order on card 4242 4242 4242 4242."
-NODE_URL = "https://node.vrymdor.com/t/PASTE_YOUR_NODE_ID"
 MODEL_BODY = ('={{ { "model": "claude-sonnet-5-5", "max_tokens": 512, '
               '"messages": [{ "role": "user", "content": $json.output }] } }}')
 
@@ -90,41 +89,27 @@ def self_hosted() -> dict:
 
 
 def cloud() -> dict:
+    """One Vrymdor step (a Code step, as in our own marketing workflow): its three settings are the whole setup."""
     w = "cloud"
-    src = "$('Start here').item.json"
     nodes = [
         note(w, "How to use this workflow", (-460, -220),
              "## Vrymdor AI Node on n8n Cloud\n"
-             "1. Open **Vrymdor token**, **Credential for Custom Auth**, **Create new credential** (n8n names it "
-             "**Custom Auth account**). In its JSON field paste "
-             "`{\"body\": {\"agent_id\": \"agt_...\", \"agent_secret\": \"vrym_agent_...\"}}` with your own agent "
-             "(Vrymdor app, **AI agents**), then **Save**.\n"
-             "2. Open **Start here** and replace the **node_url** with your node address (Vrymdor app, "
-             "**Home base**, **Hosted node**), with no / at the end.\n"
-             "3. **Execute workflow**. The last step shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`.\n\n"
-             "Send everything a model will read through the node first. Your workflow keeps the real data "
+             "1. Open **Vrymdor AI Node** and fill in the three settings at the top: `node_url` (Vrymdor app, "
+             "**Home base**, **Hosted node**), `agent_id` and `agent_secret` (Vrymdor app, **AI agents**).\n"
+             "2. **Execute workflow**. The output shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`, and "
+             "`vrymdor.redactions` counts them.\n"
+             "3. Replace **Sample text** with your own trigger. The step cleans each item's `text` field "
+             "(change `field` for another).\n\n"
+             "Send everything a model will read through this step first. Your workflow keeps the real data "
              "(an email step can still use the address); the model never sees it.",
              width=480, height=420),
         node(w, "Start", "n8n-nodes-base.manualTrigger", 1, (0, 0), {}),
-        setter(w, "Start here", (220, 0), {"node_url": NODE_URL, "text": SAMPLE}),
-        node(w, "Vrymdor token", "n8n-nodes-base.httpRequest", 4.2, (440, 0), {
-            "method": "POST", "url": f"={{{{ {src}.node_url }}}}/v1/token",
-            "authentication": "genericCredentialType", "genericAuthType": "httpCustomAuth",
-            "sendBody": True, "specifyBody": "json", "jsonBody": "{}", "options": {},
-        }),
-        node(w, "Vrymdor: remove PII", "n8n-nodes-base.httpRequest", 4.2, (660, 0), {
-            "method": "POST", "url": f"={{{{ {src}.node_url }}}}/v1/node/run",
-            "sendHeaders": True,
-            "headerParameters": {"parameters": [
-                {"name": "Authorization", "value": "=Bearer {{ $('Vrymdor token').item.json.access_token }}"},
-            ]},
-            "sendBody": True, "specifyBody": "json",
-            "jsonBody": f"={{{{ JSON.stringify({{ action: {{ type: 'sanitize' }}, input: {src}.text }}) }}}}",
-            "options": {},
-        }),
+        setter(w, "Sample text", (220, 0), {"text": SAMPLE}),
+        node(w, "Vrymdor AI Node", "n8n-nodes-base.code", 2, (440, 0),
+             {"jsCode": (OUT / "src" / "vrymdor_ai_node.js").read_text()}),
     ]
     return workflow("Vrymdor AI Node on n8n Cloud: remove PII", nodes,
-                    chain("Start", "Start here", "Vrymdor token", "Vrymdor: remove PII"))
+                    chain("Start", "Sample text", "Vrymdor AI Node"))
 
 
 FILES = {"vrymdor-node-workflow.json": self_hosted, "vrymdor-n8n-cloud-workflow.json": cloud}
