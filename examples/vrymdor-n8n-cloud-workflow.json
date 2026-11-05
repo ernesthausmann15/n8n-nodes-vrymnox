@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Vrymdor AI Node on n8n Cloud\n1. Open **Vrymdor token**, **Credential for Custom Auth**, **Create new credential**. Paste `{\"body\": {\"agent_id\": \"agt_...\", \"agent_secret\": \"vrym_agent_...\"}}` with your own agent (Vrymdor app, **AI agents**), name it `Vrymdor agent`, **Save**.\n2. Open **Start here** and replace the **node_url** with your node address (Vrymdor app, **Home base**, **Hosted node**), with no / at the end.\n3. **Execute workflow**. The last step shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`.\n\nSend everything a model will read through the node first. Your workflow keeps the real data (an email step can still use the address); the model never sees it.",
+        "content": "## Vrymdor AI Node on n8n Cloud\n1. Open **Vrymdor token**, **Credential for Custom Auth**, **Create new credential** (n8n names it **Custom Auth account**). In its JSON field paste `{\"body\": {\"agent_id\": \"agt_...\", \"agent_secret\": \"vrym_agent_...\"}}` with your own agent (Vrymdor app, **AI agents**), then **Save**.\n2. Open **Start here** and replace the **node_url** with your node address (Vrymdor app, **Home base**, **Hosted node**), with no / at the end.\n3. **Execute workflow**. The last step shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`.\n\nSend everything a model will read through the node first. Your workflow keeps the real data (an email step can still use the address); the model never sees it.",
         "height": 420,
         "width": 480
       },

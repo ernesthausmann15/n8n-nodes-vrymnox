@@ -95,9 +95,10 @@ def cloud() -> dict:
     nodes = [
         note(w, "How to use this workflow", (-460, -220),
              "## Vrymdor AI Node on n8n Cloud\n"
-             "1. Open **Vrymdor token**, **Credential for Custom Auth**, **Create new credential**. Paste "
+             "1. Open **Vrymdor token**, **Credential for Custom Auth**, **Create new credential** (n8n names it "
+             "**Custom Auth account**). In its JSON field paste "
              "`{\"body\": {\"agent_id\": \"agt_...\", \"agent_secret\": \"vrym_agent_...\"}}` with your own agent "
-             "(Vrymdor app, **AI agents**), name it `Vrymdor agent`, **Save**.\n"
+             "(Vrymdor app, **AI agents**), then **Save**.\n"
              "2. Open **Start here** and replace the **node_url** with your node address (Vrymdor app, "
              "**Home base**, **Hosted node**), with no / at the end.\n"
              "3. **Execute workflow**. The last step shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`.\n\n"
