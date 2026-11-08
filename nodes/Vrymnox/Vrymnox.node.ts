@@ -12,15 +12,30 @@ import {
   type INodeTypeDescription,
 } from 'n8n-workflow'
 
+import { maskValue } from './safeMode'
+
 type NodeResponse = {
   ok: boolean
   decision: 'allow' | 'hold' | 'block' | 'error'
   output?: unknown
   hold_id?: string | null
-  error?: { code: string; message: string; retryable: boolean } | null
+  error?: { code: string; message: string; retryable: boolean; upgrade_url?: string } | null
   redactions?: Record<string, number>
   audit?: { hash?: string; trace_id?: string } | null
 }
+
+/** Why the node fell back to Safe Mode for an item. */
+type Outage = {
+  reason: 'unreachable' | 'timeout' | 'unavailable' | 'quota_exhausted' | 'agent_limit'
+  upgradeUrl?: string
+}
+
+const DEFAULT_TIMEOUT_MS = 3_000
+const FORWARD_TIMEOUT_MS = 120_000
+const UPGRADE_URL = 'https://vrymdor.com/plans/'
+const NETWORK_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH',
+  'EPIPE', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT'])
+const TIMEOUT_CODES = new Set(['ETIMEDOUT', 'ESOCKETTIMEDOUT', 'ECONNABORTED', 'VRYMDOR_BUDGET', 'UND_ERR_HEADERS_TIMEOUT'])
 
 /**
  * Vrymnox AI Node. Every operation is one NodeRequest to the gateway's POST /v1/node/run, so each step is
@@ -122,6 +137,32 @@ export class Vrymnox implements INodeType {
         typeOptions: { minValue: 1, maxValue: 60 },
         displayOptions: { show: { waitForApproval: [true] } },
       },
+      {
+        displayName: 'Options',
+        name: 'options',
+        type: 'collection',
+        placeholder: 'Add Option',
+        default: {},
+        options: [
+          {
+            displayName: 'Allow Unmasked Passthrough on Outage',
+            name: 'allowPassthrough',
+            type: 'boolean',
+            default: false,
+            description:
+              'Whether to pass the input on UNMASKED when the AI Node cannot be reached or its free allowance is used up. Warning: personal data and secrets can then reach the next step. Off (the default) masks the input locally with Safe Mode instead. Every passthrough is marked vrymdor.degraded = "passthrough" and logged.',
+          },
+          {
+            displayName: 'Timeout Budget (Ms)',
+            name: 'timeoutMs',
+            type: 'number',
+            default: DEFAULT_TIMEOUT_MS,
+            typeOptions: { minValue: 100, maxValue: 60_000 },
+            description:
+              'How long Remove PII and Secrets and Check Only wait for the AI Node before Safe Mode masks the item locally. Model, tool and webhook calls wait up to 120 seconds (or this value if larger), since the upstream does the work.',
+          },
+        ],
+      },
     ],
   }
 
@@ -130,7 +171,7 @@ export class Vrymnox implements INodeType {
     const base = String(creds.gatewayUrl).replace(/\/+$/, '')
     // Every call goes through the credential (preAuthentication trades the agent secret for a gateway
     // token). Refusals are answered as a NodeResponse body, so HTTP errors are read rather than thrown.
-    const call = async (method: IHttpRequestMethods, path: string, body?: IDataObject): Promise<NodeResponse> => {
+    const call = async (method: IHttpRequestMethods, path: string, body?: IDataObject, timeout?: number): Promise<NodeResponse> => {
       const send = async () =>
         (await this.helpers.httpRequestWithAuthentication.call(this, 'vrymnoxApi', {
           method,
@@ -138,6 +179,7 @@ export class Vrymnox implements INodeType {
           body,
           json: true,
           ignoreHttpStatusErrors: true,
+          ...(timeout ? { timeout } : {}),
         })) as NodeResponse
       let out = await send()
       if (out?.error?.code === 'unauthenticated') {
@@ -180,7 +222,27 @@ export class Vrymnox implements INodeType {
           params: { dry_run: op === 'check' },
           idempotency_key: key.length >= 8 ? key : undefined,
         }
-        let out = await call('POST', '/v1/node/run', request as unknown as IDataObject)
+        const options = this.getNodeParameter('options', i, {}) as IDataObject
+        const budget = Math.max(100, Number(options.timeoutMs ?? DEFAULT_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS)
+        const wait = op === 'sanitize' || op === 'check' ? budget : Math.max(budget, FORWARD_TIMEOUT_MS)
+        let out: NodeResponse
+        let outage: Outage | null
+        try {
+          out = await withBudget(call('POST', '/v1/node/run', request as unknown as IDataObject, wait), wait)
+          outage = outageFromResponse(out)
+        } catch (error) {
+          outage = outageFromError(error)
+          if (outage === null) throw error
+          out = { ok: false, decision: 'error' }
+        }
+        if (outage !== null) {
+          // Never stop, never send raw: the item is masked locally and the workflow goes on.
+          const item = safeModeItem(op, input, outage, options.allowPassthrough === true)
+          this.logger?.warn(`Vrymdor Safe Mode (${outage.reason}): ${(item.vrymdor as IDataObject).degraded}`, {
+            node: this.getNode().name, item: i })
+          results.push({ json: item, pairedItem: { item: i } })
+          continue
+        }
 
         if (out.decision === 'hold' && out.hold_id && op !== 'check' && this.getNodeParameter('waitForApproval', i, true)) {
           const until = Date.now() + (this.getNodeParameter('waitMinutes', i, 15) as number) * 60_000
@@ -214,5 +276,107 @@ function safeParse(text: string): unknown {
     return JSON.parse(text)
   } catch {
     return text
+  }
+}
+
+/** Rejects with a VRYMDOR_BUDGET error when the promise takes longer than `ms` (the token exchange included). */
+function withBudget<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(Object.assign(new Error(`Vrymdor AI Node did not answer within ${ms} ms`),
+      { code: 'VRYMDOR_BUDGET' })), ms)
+  })
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer))
+}
+
+/** An answer that means the AI Node could not serve the item: a plan limit, or no real gateway answer at all. */
+export function outageFromResponse(out: unknown): Outage | null {
+  if (out === null || typeof out !== 'object' || typeof (out as NodeResponse).ok !== 'boolean') {
+    return { reason: 'unavailable' } // a proxy error page or an empty body, not the gateway's NodeResponse
+  }
+  const err = (out as NodeResponse).error
+  const code = err?.code
+  if (code === 'quota_exhausted' || code === 'agent_limit') return { reason: code, upgradeUrl: err?.upgrade_url || UPGRADE_URL }
+  if (code === 'unavailable') return { reason: 'unavailable' }
+  if (code === 'timeout') return { reason: 'timeout' }
+  return null
+}
+
+/** A thrown error that means the AI Node is down, slow or out of allowance; null for anything else (rethrown). */
+export function outageFromError(error: unknown): Outage | null {
+  const seen: Record<string, unknown>[] = []
+  let e: unknown = error
+  for (let depth = 0; depth < 4 && e && typeof e === 'object'; depth++) {
+    seen.push(e as Record<string, unknown>)
+    e = (e as Record<string, unknown>).cause
+  }
+  const codes = new Set<string>()
+  const statuses = new Set<number>()
+  let text = ''
+  for (const o of seen) {
+    for (const k of ['code', 'errno', 'name']) if (typeof o[k] === 'string') codes.add(o[k] as string)
+    for (const k of ['httpCode', 'statusCode', 'status']) {
+      const n = Number(o[k])
+      if (Number.isInteger(n) && n > 0) statuses.add(n)
+    }
+    const res = o.response as Record<string, unknown> | undefined
+    if (res && Number.isInteger(Number(res.status))) statuses.add(Number(res.status))
+    if (typeof o.message === 'string') text += ` ${o.message}`
+  }
+  if (statuses.has(402)) return { reason: 'quota_exhausted', upgradeUrl: UPGRADE_URL }
+  if (statuses.has(502) || statuses.has(503) || statuses.has(504)) return { reason: 'unavailable' }
+  if ([...codes].some((c) => TIMEOUT_CODES.has(c)) || codes.has('TimeoutError') || /timed? ?out/i.test(text)) {
+    return { reason: 'timeout' }
+  }
+  if ([...codes].some((c) => NETWORK_CODES.has(c)) ||
+    /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|EHOSTUNREACH|ENETUNREACH|socket hang up|fetch failed|getaddrinfo/i.test(text)) {
+    return { reason: 'unreachable' }
+  }
+  return null
+}
+
+const REASON_TEXT: Record<Outage['reason'], string> = {
+  unreachable: 'the Vrymdor AI Node could not be reached',
+  timeout: 'the Vrymdor AI Node did not answer within the timeout budget',
+  unavailable: 'the Vrymdor AI Node was unavailable',
+  quota_exhausted: "the Community plan's monthly requests are used up",
+  agent_limit: "this agent is past the Community plan's agent limit",
+}
+
+/** The item Safe Mode returns: the input masked locally (or raw, only with passthrough on), marked degraded. */
+export function safeModeItem(op: string, input: unknown, outage: Outage, allowPassthrough: boolean): IDataObject {
+  const plan = outage.reason === 'quota_exhausted' || outage.reason === 'agent_limit'
+  // Passthrough is for outages only: a used up allowance is always masked locally.
+  const passthrough = allowPassthrough && !plan
+  const masked = passthrough ? { output: input, redactions: {} } : maskValue(input)
+  const forward = op !== 'sanitize'
+  const vrymdor: IDataObject = {
+    degraded: passthrough ? 'passthrough' : 'safe_mode',
+    reason: outage.reason,
+    message: passthrough
+      ? `Unmasked passthrough: ${REASON_TEXT[outage.reason]}, and this step allows passthrough on outage, so the input went on unmasked.`
+      : `Safe Mode: ${REASON_TEXT[outage.reason]}, so this item was masked locally and the workflow continued.`,
+    action_ran: !forward ? null : op !== 'check' && outage.reason === 'timeout' ? 'unknown' : false,
+  }
+  if (plan) {
+    vrymdor.upgrade_url = outage.upgradeUrl || UPGRADE_URL
+    vrymdor.upgrade_hint = outage.reason === 'agent_limit'
+      ? `Community includes up to 2 agents. Pro includes up to 15, with a 14 day free trial: ${vrymdor.upgrade_url}`
+      : `Community includes 10,000 requests a month. Pro includes 100,000, with a 14 day free trial: ${vrymdor.upgrade_url}`
+  }
+  return {
+    node_version: '1',
+    ok: !forward,
+    decision: 'safe_mode',
+    output: masked.output as IDataObject,
+    redactions: masked.redactions,
+    rules: [passthrough ? 'safe_mode_passthrough' : 'safe_mode'],
+    hold_id: null,
+    audit: null,
+    error: forward
+      ? { code: 'safe_mode', retryable: true,
+        message: `The ${op} action did not run through the AI Node (${REASON_TEXT[outage.reason]}). The output is the input, masked locally.` }
+      : null,
+    vrymdor,
   }
 }

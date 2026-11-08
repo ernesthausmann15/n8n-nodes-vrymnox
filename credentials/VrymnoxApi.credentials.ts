@@ -20,12 +20,13 @@ export class VrymnoxApi implements ICredentialType {
   icon = 'file:../nodes/Vrymnox/vrymnox.svg' as const
   properties: INodeProperties[] = [
     {
-      displayName: 'Gateway URL',
+      // Shown as "Node Host URL" (the Mission Brief's field name); the key stays gatewayUrl so saved credentials work.
+      displayName: 'Node Host URL',
       name: 'gatewayUrl',
       type: 'string',
       default: 'http://vrymnox-gateway:8080',
       placeholder: 'http://vrymnox-gateway:8080',
-      description: 'Your Vrymdor AI Node (Vrymnox gateway), reachable from this n8n instance',
+      description: 'Your Vrymdor AI Node address, reachable from this n8n instance (the Node Host URL in the Vrymdor app)',
     },
     { displayName: 'Agent ID', name: 'agentId', type: 'string', default: '', placeholder: 'agt_3f9c2a7d1b8e4f60' },
     {

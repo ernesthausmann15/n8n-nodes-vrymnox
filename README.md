@@ -33,7 +33,7 @@ Create a **Vrymnox Agent API** credential with:
 
 | Field | What to enter |
 | ----- | ------------- |
-| Gateway URL | Your Vrymnox gateway as this n8n instance can reach it, for example `http://vrymnox-gateway:8080` |
+| Node Host URL | Your Vrymdor AI Node as this n8n instance can reach it, for example `http://vrymnox-gateway:8080` (shown as "Gateway URL" before 1.0.3; saved credentials keep working) |
 | Agent ID | The agent's ID from the Vrymnox console (AI agents, Register an agent), for example `agt_3f9c2a7d1b8e4f60` |
 | Agent Secret | The secret shown once when the agent was registered. It starts with `vrym_agent_` |
 
@@ -72,6 +72,40 @@ Common fields:
 * **Wait for Approval**: high-risk actions can need a person's approval first. When on, the node waits
   (up to the minutes you set) and then returns the result. When off, it returns the hold ID at once.
 
+## Safe Mode (never stops, never sends raw)
+
+From 1.0.3 the node keeps your workflow running when the AI Node cannot serve a step. Safe Mode starts when:
+
+* the AI Node cannot be reached (connection refused, DNS failure, connection reset),
+* it does not answer within the **Timeout Budget** (Options, default 3,000 ms for Remove PII and Secrets and Check
+  Only; model, tool and webhook calls wait up to 120 seconds, since the upstream does the work),
+* it answers that it is unavailable (HTTP 502, 503 or 504, or a proxy error page), or
+* it answers HTTP 402 because the free Community plan's monthly requests (10,000) or agents (2) are used up.
+
+Then the node masks the item locally with built-in, public-grade detectors (email addresses, card numbers that pass
+the Luhn check, US Social Security numbers, PEM private keys, OpenAI, Anthropic, Stripe, GitHub, AWS, Google and
+Slack keys, bearer tokens, JWTs, and string values under secret field names such as `password` or `api_key`), in the
+same `[REDACTED:TYPE]` format, and the workflow continues. Safe Mode has no runtime dependencies and none of the AI
+Node's own engine, and it masks aggressively on purpose. It does not apply your custom policy or patterns.
+
+The item is marked so a later step can branch on it:
+
+```json
+{ "ok": true, "decision": "safe_mode", "output": "Mail [REDACTED:EMAIL]", "redactions": { "EMAIL": 1 },
+  "vrymdor": { "degraded": "safe_mode", "reason": "unreachable", "message": "Safe Mode: the Vrymdor AI Node could not be reached, so this item was masked locally and the workflow continued." } }
+```
+
+`reason` is `unreachable`, `timeout`, `unavailable`, `quota_exhausted` or `agent_limit`. On a 402 the item also
+carries `vrymdor.upgrade_url` and `vrymdor.upgrade_hint`. For **Run a Tool**, **Call a Model** and **Send a
+Webhook** the action cannot run without the AI Node: the item returns `ok: false`, `error.code` `safe_mode`, the
+input masked locally as `output`, and `vrymdor.action_ran` (`false`, or `unknown` after a timeout, since the AI Node
+may have finished the action). Policy refusals and wrong credentials are not outages: they still raise an n8n error.
+
+**Allow Unmasked Passthrough on Outage** (Options, off by default) passes the input on unmasked during an outage
+instead, marked `vrymdor.degraded` = `passthrough`. Personal data and secrets can then reach the next step, so leave
+it off unless that step must never be delayed and never sees private data. A used up free allowance (402) is always
+masked, even with this option on. Every Safe Mode and passthrough item is written to the n8n log as a warning.
+
 ## Output
 
 Each item returns the gateway's response: `ok`, `decision` (`allow`, `hold`, `block` or `error`),
@@ -79,6 +113,13 @@ Each item returns the gateway's response: `ok`, `decision` (`allow`, `hold`, `bl
 `audit` reference. A refusal raises an n8n error such as `Vrymnox tool_not_allowed: ...`; with
 **Continue On Fail** the item carries an `error` field instead. Retries of the same execution reuse
 an idempotency key, so the action never runs twice.
+
+## Changes
+
+* **1.0.3**: Safe Mode (above), with the Timeout Budget and Allow Unmasked Passthrough on Outage options. The
+  credential's first field is now labeled **Node Host URL** (its key is unchanged). Still no runtime dependencies.
+* **1.0.2**: author email for n8n ownership verification.
+* **1.0.1**: published from GitHub Actions with npm provenance.
 
 ## Compatibility
 
