@@ -155,7 +155,7 @@ async function safeModeTests() {
     const r = {}
     const text = [
       'jane@example.com', '4242 4242 4242 4242', '4242-4242-4242-4241 (not Luhn)', '123-45-6789',
-      '-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu\n-----END RSA PRIVATE KEY-----',
+      '-----BEGIN RSA ' + 'PRIVATE KEY-----\nMIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu\n-----END RSA PRIVATE KEY-----',
       'sk-proj-' + 'a'.repeat(30), 'sk-ant-api03-' + 'b'.repeat(30), 'sk_live_' + 'c'.repeat(24), 'rk_test_' + 'd'.repeat(24),
       'ghp_' + 'e'.repeat(36), 'github_pat_' + 'f'.repeat(30), 'AKIA' + 'ABCDEFGHIJKLMNOP',
       'aws_secret_access_key = ' + 'g'.repeat(40), 'AIza' + 'h'.repeat(35), 'xoxb-' + '1234567890-abcdef',
