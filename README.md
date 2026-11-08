@@ -49,7 +49,7 @@ menu at the top right, choose **Import from File** and pick the file.
 | File | For | What it does |
 | ---- | --- | ------------ |
 | [`vrymdor-node-workflow.json`](examples/vrymdor-node-workflow.json) | self-hosted n8n with this node installed | Sample text, then **Remove PII and Secrets**, then an optional model call through the node |
-| [`vrymdor-n8n-cloud-workflow.json`](examples/vrymdor-n8n-cloud-workflow.json) | n8n Cloud (until n8n verifies this node) | One **Vrymdor AI Node** step: fill in its three settings (node address, agent ID, agent secret) and run |
+| [`vrymdor-n8n-cloud-workflow.json`](examples/vrymdor-n8n-cloud-workflow.json) | n8n Cloud (until n8n verifies this node) | A **Vrymdor token** step (your node address in its URL, your agent in its Custom Auth credential), then the **Vrymdor AI Node** step. The note on the canvas has the steps |
 
 Each has a note on the canvas with its three steps. Run it and the output shows `[REDACTED:EMAIL]` and
 `[REDACTED:CREDIT_CARD]` where the sample had an email address and a card number.

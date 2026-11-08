@@ -3,17 +3,17 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Vrymdor AI Node on n8n Cloud\n1. Open **Vrymdor AI Node** and fill in the three settings at the top: `node_url` (Vrymdor app, **Home base**, **Hosted node**), `agent_id` and `agent_secret` (Vrymdor app, **AI agents**).\n2. **Execute workflow**. The output shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`, and `vrymdor.redactions` counts them.\n3. Replace **Sample text** with your own trigger. The step cleans each item's `text` field (change `field` for another).\n\nSend everything a model will read through this step first. Your workflow keeps the real data (an email step can still use the address); the model never sees it.",
-        "height": 420,
-        "width": 480
+        "content": "## Vrymdor AI Node on n8n Cloud\n1. In its **Vrymdor token** step, paste the full URL from your Vrymdor dashboard into **URL**. It already ends in /v1/token. (Dashboard: **AI agents**, **Connect your AI Node**, **n8n Cloud**, **URL for the Vrymdor token step**.)\n2. In the same step, **Custom Auth**, **Create new credential**. In its JSON field paste **Vrymdor token credential (Custom Auth JSON)** from the same card. It is filled in with your Agent ID and Agent Secret and looks like:\n`{\"body\": {\"agent_id\": \"agt_...\", \"agent_secret\": \"vrym_agent_...\"}}`\nThen **Save**. The secret stays in the credential: it is not shown in the workflow and does not leave with it when you share or export it.\n3. Check the connection: **Execute step** on **Vrymdor token** shows an `access_token`. 404 means the URL is missing /v1/token or has the wrong node address: paste the full URL from your dashboard again. 401 or “Authorization failed” means the Agent ID or Agent Secret is wrong: copy both again. 502 means your node is off: turn it on in Home base and copy the URL fresh.\n4. **Execute workflow**. The output shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`, and `vrymdor.redactions` counts them.\n\nReplace **Sample text** with your own trigger (set `items_from` in **Vrymdor AI Node** to its name). Send everything a model will read through these steps first. Your workflow keeps the real data (an email step can still use the address); the model sees only the masked text.",
+        "height": 560,
+        "width": 520
       },
       "id": "7a3ca3fb-9e28-5ceb-9a63-147cbca25b3f",
       "name": "How to use this workflow",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -460,
-        -220
+        -500,
+        -300
       ]
     },
     {
@@ -53,14 +53,35 @@
     },
     {
       "parameters": {
-        "jsCode": "// ============ Vrymdor AI Node: fill these in once, then save ============\nconst SETTINGS = {\n  // Your node address: the Vrymdor app, Home base, Hosted node (no / at the end).\n  node_url: 'https://node.vrymdor.com/t/PASTE_YOUR_NODE_ID',\n  // The Vrymdor app, AI agents, Register an agent.\n  agent_id: 'agt_PASTE',\n  agent_secret: 'vrym_agent_PASTE',\n  // The field of each item to clean. The cleaned text replaces it, so the next step gets it as before.\n  field: 'text',\n};\n// ========================================================================\n// Every item's field goes through your AI Node: personal data and secrets are removed and your policy applies\n// before anything reaches the next step (for example a model). The rest of the item is passed on untouched, so a\n// later step (an email step's To field, say) can still use it. Each result carries `vrymdor`: the decision and the\n// count of what was removed. A refusal stops the workflow with the node's reason.\nif (SETTINGS.node_url.includes('PASTE') || SETTINGS.agent_id.includes('PASTE') || SETTINGS.agent_secret.includes('PASTE')) {\n  throw new Error('Vrymdor AI Node: fill in node_url, agent_id and agent_secret at the top of this step.');\n}\nconst base = SETTINGS.node_url.replace(/\\/+$/, '');\nlet tok;\ntry {\n  tok = await this.helpers.httpRequest({ method: 'POST', url: `${base}/v1/token`, json: true, timeout: 15000,\n    body: { agent_id: SETTINGS.agent_id, agent_secret: SETTINGS.agent_secret } });\n} catch (err) {\n  throw new Error(`Vrymdor AI Node: no token from ${base} (check node_url, agent_id and agent_secret): ${err.message}`);\n}\nconst out = [];\nfor (const item of $input.all()) {\n  const value = item.json[SETTINGS.field];\n  if (value === undefined) throw new Error(`Vrymdor AI Node: the item has no \"${SETTINGS.field}\" field (change field in the settings).`);\n  const res = await this.helpers.httpRequest({ method: 'POST', url: `${base}/v1/node/run`, json: true, timeout: 15000,\n    headers: { Authorization: `Bearer ${tok.access_token}` }, ignoreHttpStatusErrors: true,\n    body: { node_version: '1', action: { type: 'sanitize' }, input: value, context: { platform: 'n8n' } } });\n  if (!res || !res.ok) {\n    const e = (res && res.error) || {};\n    throw new Error(`Vrymdor ${e.code || 'error'}: ${e.message || 'the node refused the request.'}`);\n  }\n  out.push({ json: { ...item.json, [SETTINGS.field]: res.output,\n    vrymdor: { decision: res.decision, redactions: res.redactions || {}, audit: res.audit || null } } });\n}\nreturn out;\n"
+        "method": "POST",
+        "url": "https://node.vrymdor.com/t/PASTE_YOUR_NODE_ID/v1/token",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "id": "c3cd1b0c-28aa-5a1b-b0e0-501449a8caf3",
+      "name": "Vrymdor token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============ Vrymdor AI Node ============\n// Your agent id and secret live only in the Custom Auth credential of the Vrymdor token step, never here, so\n// they are not shown in this step and do not leave with the workflow when it is shared or exported.\nconst SETTINGS = {\n  // The field of each item to clean. The cleaned text replaces it, so the next step gets it as before.\n  field: 'text',\n  // The step whose items this step cleans: the step just before Vrymdor token.\n  items_from: 'Sample text',\n};\n// =========================================\n// Every item's field goes through your AI Node: personal data and secrets are removed and your policy applies\n// before anything reaches the next step (for example a model). The rest of the item is passed on untouched, so a\n// later step (an email step's To field, say) can still use it. Each result carries `vrymdor`: the decision and the\n// count of what was removed. A refusal stops the workflow with the node's reason.\nconst tokenStep = $('Vrymdor token');\n// The node address is the one in the Vrymdor token step's URL, so it is pasted once.\nconst base = String((tokenStep.params && tokenStep.params.url) || '').trim()\n  .replace(/^=/, '').replace(/\\/+$/, '').replace(/\\/v1\\/token$/, '');\nif (!/^https?:\\/\\/[^/{}]+/.test(base) || base.includes('PASTE') || base.includes('{{')) {\n  throw new Error('Vrymdor AI Node: put your node address in the URL of the Vrymdor token step, ' +\n    'for example https://node.vrymdor.com/t/your-node-id/v1/token (Vrymdor app, Home base, Hosted node).');\n}\nconst token = tokenStep.first().json.access_token;\nif (!token) {\n  throw new Error('Vrymdor AI Node: the Vrymdor token step returned no access_token. Open it, check its Custom Auth ' +\n    'credential and run it again.');\n}\nconst out = [];\nfor (const item of $(SETTINGS.items_from).all()) {\n  const value = item.json[SETTINGS.field];\n  if (value === undefined) throw new Error(`Vrymdor AI Node: the item has no \"${SETTINGS.field}\" field (change field in the settings).`);\n  const res = await this.helpers.httpRequest({ method: 'POST', url: `${base}/v1/node/run`, json: true, timeout: 15000,\n    headers: { Authorization: `Bearer ${token}` }, ignoreHttpStatusErrors: true,\n    body: { node_version: '1', action: { type: 'sanitize' }, input: value, context: { platform: 'n8n' } } });\n  if (!res || !res.ok) {\n    const e = (res && res.error) || {};\n    throw new Error(`Vrymdor ${e.code || 'error'}: ${e.message || 'the node refused the request.'}`);\n  }\n  out.push({ json: { ...item.json, [SETTINGS.field]: res.output,\n    vrymdor: { decision: res.decision, redactions: res.redactions || {}, audit: res.audit || null } } });\n}\nreturn out;\n"
       },
       "id": "4200bb6b-2ba9-5f38-9624-939789c94afa",
       "name": "Vrymdor AI Node",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        440,
+        660,
         0
       ]
     }
@@ -78,6 +99,17 @@
       ]
     },
     "Sample text": {
+      "main": [
+        [
+          {
+            "node": "Vrymdor token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vrymdor token": {
       "main": [
         [
           {

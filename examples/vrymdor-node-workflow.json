@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Vrymdor AI Node in n8n\n1. **Settings**, **Community Nodes**, **Install**: `n8n-nodes-vrymnox`.\n2. Open **Vrymdor: remove PII**, **Credential**, **Create new**: your node address, Agent ID (`agt_...`) and Agent Secret (`vrym_agent_...`) from the Vrymdor app, **AI agents**.\n3. **Execute workflow**. The output shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`, and `redactions` counts them.\n\nPut your own data in **Sample text**, or connect any trigger in its place.",
+        "content": "## Vrymdor AI Node in n8n\n1. **Settings**, **Community Nodes**, **Install**: `n8n-nodes-vrymnox`.\n2. Open **Vrymdor: remove PII**, **Credential**, **Create new**: paste the Node Host URL, Agent ID (`agt_...`) and Agent Secret (`vrym_agent_...`) from the **Connect your AI Node** card in your Vrymdor dashboard (**AI agents**, choose **n8n**), each with its own Copy button.\n3. **Execute workflow**. The output shows `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`, and `redactions` counts them.\n\nPut your own data in **Sample text**, or connect any trigger in its place.",
         "height": 360,
         "width": 440
       },
@@ -86,7 +86,7 @@
     },
     {
       "parameters": {
-        "content": "## Optional: a model call through the node\nOff until your node has an upstream named `anthropic`. Then select the step and press **D** to turn it on. The node checks the policy and removes personal data again before the model sees the prompt.",
+        "content": "## Optional: a model call through the node\nOff until your node has an upstream named `anthropic`. Then select the step and press **D** to turn it on. The node checks the policy and masks emails, card numbers, keys and tokens again before the model sees the prompt.",
         "height": 220,
         "width": 360
       },
