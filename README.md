@@ -123,9 +123,8 @@ an idempotency key, so the action never runs twice.
 
 ## Changes
 
-- 1.0.3: Shadow mode (report only) on Remove PII and Secrets, and the sanitization report in the output.
-
-* **1.0.3**: Safe Mode (above), with the Timeout Budget and Allow Unmasked Passthrough on Outage options. The
+* **1.0.3**: Safe Mode (above), with the Timeout Budget and Allow Unmasked Passthrough on Outage options; Shadow
+  mode (report only) and the sanitization report. The
   credential's first field is now labeled **Node Host URL** (its key is unchanged). Still no runtime dependencies.
 * **1.0.2**: author email for n8n ownership verification.
 * **1.0.1**: published from GitHub Actions with npm provenance.
