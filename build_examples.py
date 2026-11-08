@@ -76,8 +76,8 @@ def self_hosted() -> dict:
         node(w, "Vrymdor: remove PII", "n8n-nodes-vrymnox.vrymnox", 1, (440, 0),
              {"operation": "sanitize", "input": "={{ $json.text }}"}),
         node(w, "Vrymdor: call a model", "n8n-nodes-vrymnox.vrymnox", 1, (660, 0),
-             {"operation": "llm", "upstream": "anthropic", "path": "v1/messages", "input": MODEL_BODY,
-              "waitForApproval": True, "waitMinutes": 15}, disabled=True),
+             {"operation": "llm", "upstream": "anthropic", "path": "v1/messages", "input": MODEL_BODY},
+             disabled=True),
         note(w, "The model step", (600, -260),
              "## Optional: a model call through the node\n"
              "Off until your node has an upstream named `anthropic`. Then select the step and press **D** "

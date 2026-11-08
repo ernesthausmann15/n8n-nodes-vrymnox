@@ -128,6 +128,7 @@ async function safeModeTests() {
             error: { code: 'tool_not_allowed', message: 'Not on the allowlist.', retryable: false } })
         }
         const doc = JSON.parse(raw || '{}')
+        if (mode === 'hold') return send(202, { node_version: '1', ok: true, decision: 'hold', hold_id: 'h-1', output: null, redactions: {}, rules: ['require_approval'] })
         if (mode === 'echo') return send(200, { node_version: '1', ok: true, decision: 'allow', output: doc.params, redactions: {}, rules: [] })
         return send(200, { node_version: '1', ok: true, decision: 'allow', output: `gateway:${JSON.stringify(doc.input)}`,
           redactions: {}, rules: [], audit: { trace_id: 't' } })
@@ -315,6 +316,19 @@ async function safeModeTests() {
     const down = await run(await deadUrl(), { operation: 'sanitize', input: sample, options: { shadow: true } })
     assert.equal(down.vrymdor.degraded, 'shadow')
     assert.deepEqual(down.output, sample)
+  })
+
+  test('a held action returns at once: no waiting, nobody asked, the workflow continues', async () => {
+    const g = await stub('hold')
+    try {
+      const started = Date.now()
+      const out = await run(g.url, { operation: 'tool', upstream: 'github', tool: 'create_issue', input: { title: 'a' } })
+      assert.equal(out.thrown, undefined, out.thrown)
+      assert.equal(out.decision, 'hold')
+      assert.equal(out.vrymdor.action_ran, false)
+      assert.ok(!/approv/i.test(out.vrymdor.message))
+      assert.ok(Date.now() - started < 3000)
+    } finally { g.close() }
   })
 
   let failed = 0

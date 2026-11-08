@@ -69,8 +69,9 @@ Common fields:
 * **Upstream**: the name of an upstream configured on your gateway, for example `github`.
 * **Input**: the data to clean, the tool arguments, the model request body or the webhook payload.
   By default it is the incoming item (`{{ $json }}`).
-* **Wait for Approval**: high-risk actions can need a person's approval first. When on, the node waits
-  (up to the minutes you set) and then returns the result. When off, it returns the hold ID at once.
+* **Held actions**: if your policy holds a model, tool or webhook call, the node never waits and never asks
+  anyone: the item returns `decision: hold` with `vrymdor.action_ran: false`, the action did not run, and the
+  workflow continues.
 
 ## Safe Mode (never stops, never sends raw)
 
@@ -124,7 +125,8 @@ an idempotency key, so the action never runs twice.
 ## Changes
 
 * **1.0.3**: Safe Mode (above), with the Timeout Budget and Allow Unmasked Passthrough on Outage options; Shadow
-  mode (report only) and the sanitization report. The
+  mode (report only) and the sanitization report. A held action now returns at once and the workflow
+  continues; the node never waits on anyone. The
   credential's first field is now labeled **Node Host URL** (its key is unchanged). Still no runtime dependencies.
 * **1.0.2**: author email for n8n ownership verification.
 * **1.0.1**: published from GitHub Actions with npm provenance.

@@ -2,7 +2,6 @@ import {
   NodeApiError,
   NodeConnectionTypes,
   NodeOperationError,
-  sleep,
   type IDataObject,
   type IHttpRequestMethods,
   type JsonObject,
@@ -120,22 +119,6 @@ export class Vrymnox implements INodeType {
         type: 'json',
         default: '={{ $json }}',
         description: 'The data to clean, the tool arguments, the model request body, or the webhook payload',
-      },
-      {
-        displayName: 'Wait for Approval',
-        name: 'waitForApproval',
-        type: 'boolean',
-        default: true,
-        description: 'Whether to wait when a person must approve the action first (high-risk tools). Off returns the hold ID at once.',
-        displayOptions: { show: { operation: ['tool', 'llm', 'webhook'] } },
-      },
-      {
-        displayName: 'Wait Up To (Minutes)',
-        name: 'waitMinutes',
-        type: 'number',
-        default: 15,
-        typeOptions: { minValue: 1, maxValue: 60 },
-        displayOptions: { show: { waitForApproval: [true] } },
       },
       {
         displayName: 'Options',
@@ -261,12 +244,14 @@ export class Vrymnox implements INodeType {
           continue
         }
 
-        if (out.decision === 'hold' && out.hold_id && op !== 'check' && this.getNodeParameter('waitForApproval', i, true)) {
-          const until = Date.now() + (this.getNodeParameter('waitMinutes', i, 15) as number) * 60_000
-          while (out.decision === 'hold' && Date.now() < until) {
-            await sleep(5_000)
-            out = await call('GET', `/v1/node/holds/${out.hold_id}`)
-          }
+        if (out.decision === 'hold' && op !== 'check') {
+          // Customers never approve anything (owner rule): the node does not wait or ask anyone. A held action did
+          // not run; the item says so and the workflow continues.
+          const held = { ...(out as unknown as IDataObject) }
+          held.vrymdor = { held: true, action_ran: false,
+            message: 'Your policy held this action, so it did not run. The workflow continued.' }
+          results.push({ json: held, pairedItem: { item: i } })
+          continue
         }
         if (!out.ok && out.decision !== 'hold') {
           const err = out.error ?? { code: 'error', message: 'The action was refused.', retryable: false }

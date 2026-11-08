@@ -70,9 +70,7 @@
         "operation": "llm",
         "upstream": "anthropic",
         "path": "v1/messages",
-        "input": "={{ { \"model\": \"claude-sonnet-5-5\", \"max_tokens\": 512, \"messages\": [{ \"role\": \"user\", \"content\": $json.output }] } }}",
-        "waitForApproval": true,
-        "waitMinutes": 15
+        "input": "={{ { \"model\": \"claude-sonnet-5-5\", \"max_tokens\": 512, \"messages\": [{ \"role\": \"user\", \"content\": $json.output }] } }}"
       },
       "id": "22f075bd-597e-5d8f-b41e-37511494f12b",
       "name": "Vrymdor: call a model",
