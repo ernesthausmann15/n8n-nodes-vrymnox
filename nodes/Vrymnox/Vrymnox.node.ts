@@ -153,6 +153,14 @@ export class Vrymnox implements INodeType {
               'Whether to pass the input on UNMASKED when the AI Node cannot be reached or its free allowance is used up. Warning: personal data and secrets can then reach the next step. Off (the default) masks the input locally with Safe Mode instead. Every passthrough is marked vrymdor.degraded = "passthrough" and logged.',
           },
           {
+            displayName: 'Shadow Mode (Report Only)',
+            name: 'shadow',
+            type: 'boolean',
+            default: false,
+            description:
+              'Whether Remove PII and Secrets only reports what it would mask (vrymdor report and redactions) and passes the input on unchanged. Use it to see your own leak report before you turn masking on. Off (the default) masks. Model, tool and webhook calls always mask.',
+          },
+          {
             displayName: 'Timeout Budget (Ms)',
             name: 'timeoutMs',
             type: 'number',
@@ -214,15 +222,16 @@ export class Vrymnox implements INodeType {
         if (op === 'llm') action.path = this.getNodeParameter('path', i) as string
         // A stable key per execution, node and item: n8n retries never run the action twice.
         const key = `${this.getExecutionId()}:${this.getNode().id}:${i}`.replace(/[^A-Za-z0-9._:-]/g, '-').slice(0, 128)
+        const options = this.getNodeParameter('options', i, {}) as IDataObject
+        const shadow = op === 'sanitize' && options.shadow === true
         const request = {
           node_version: '1',
           action,
           input,
           context: { platform: 'n8n', workflow: String(this.getWorkflow().id ?? '').slice(0, 200) },
-          params: { dry_run: op === 'check' },
+          params: shadow ? { dry_run: false, shadow: true } : { dry_run: op === 'check' },
           idempotency_key: key.length >= 8 ? key : undefined,
         }
-        const options = this.getNodeParameter('options', i, {}) as IDataObject
         const budget = Math.max(100, Number(options.timeoutMs ?? DEFAULT_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS)
         const wait = op === 'sanitize' || op === 'check' ? budget : Math.max(budget, FORWARD_TIMEOUT_MS)
         let out: NodeResponse
@@ -234,6 +243,14 @@ export class Vrymnox implements INodeType {
           outage = outageFromError(error)
           if (outage === null) throw error
           out = { ok: false, decision: 'error' }
+        }
+        if (outage !== null && shadow) {
+          // Shadow mode changes nothing by choice, so an outage changes nothing either: no report this time.
+          results.push({ json: { ok: true, decision: 'allow', output: input as IDataObject, redactions: {},
+            vrymdor: { degraded: 'shadow', reason: outage.reason,
+              message: 'Shadow mode: the AI Node could not be reached, so no report was made and the input went on unchanged, as shadow mode does.' } },
+          pairedItem: { item: i } })
+          continue
         }
         if (outage !== null) {
           // Never stop, never send raw: the item is masked locally and the workflow goes on.

@@ -128,6 +128,7 @@ async function safeModeTests() {
             error: { code: 'tool_not_allowed', message: 'Not on the allowlist.', retryable: false } })
         }
         const doc = JSON.parse(raw || '{}')
+        if (mode === 'echo') return send(200, { node_version: '1', ok: true, decision: 'allow', output: doc.params, redactions: {}, rules: [] })
         return send(200, { node_version: '1', ok: true, decision: 'allow', output: `gateway:${JSON.stringify(doc.input)}`,
           redactions: {}, rules: [], audit: { trace_id: 't' } })
       })
@@ -301,6 +302,19 @@ async function safeModeTests() {
       const out = await run(`http://127.0.0.1:${server.address().port}`, { operation: 'sanitize', input: sample })
       assert.ok(out.thrown, JSON.stringify(out))
     } finally { server.close() }
+  })
+
+  test('shadow mode: sends shadow on Remove PII only, and an outage passes the input on unchanged', async () => {
+    const g = await stub('echo')
+    try {
+      const out = await run(g.url, { operation: 'sanitize', input: { x: 1 }, options: { shadow: true } })
+      assert.deepEqual(out.output, { dry_run: false, shadow: true })
+      const llm = await run(g.url, { operation: 'llm', upstream: 'anthropic', path: 'v1/messages', input: { x: 1 }, options: { shadow: true } })
+      assert.equal(llm.output && llm.output.shadow, undefined)
+    } finally { g.close() }
+    const down = await run(await deadUrl(), { operation: 'sanitize', input: sample, options: { shadow: true } })
+    assert.equal(down.vrymdor.degraded, 'shadow')
+    assert.deepEqual(down.output, sample)
   })
 
   let failed = 0

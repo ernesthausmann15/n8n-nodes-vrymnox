@@ -106,6 +106,13 @@ instead, marked `vrymdor.degraded` = `passthrough`. Personal data and secrets ca
 it off unless that step must never be delayed and never sees private data. A used up free allowance (402) is always
 masked, even with this option on. Every Safe Mode and passthrough item is written to the n8n log as a warning.
 
+## Shadow mode (report only)
+
+Turn on **Options, Shadow Mode (Report Only)** on a Remove PII and Secrets step to see what the AI Node would mask
+without changing anything: the input goes on unchanged, and `redactions` and `report` say what would have been
+masked (categories, how sure each detector is, and a residual risk score). It is the zero risk way to read your own
+leak report before you turn masking on. Model, tool and webhook steps always mask; shadow mode never applies to them.
+
 ## Output
 
 Each item returns the gateway's response: `ok`, `decision` (`allow`, `hold`, `block` or `error`),
@@ -115,6 +122,8 @@ Each item returns the gateway's response: `ok`, `decision` (`allow`, `hold`, `bl
 an idempotency key, so the action never runs twice.
 
 ## Changes
+
+- 1.0.3: Shadow mode (report only) on Remove PII and Secrets, and the sanitization report in the output.
 
 * **1.0.3**: Safe Mode (above), with the Timeout Budget and Allow Unmasked Passthrough on Outage options. The
   credential's first field is now labeled **Node Host URL** (its key is unchanged). Still no runtime dependencies.
