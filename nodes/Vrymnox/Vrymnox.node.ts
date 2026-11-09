@@ -65,6 +65,7 @@ export class Vrymnox implements INodeType {
         options: [
           { name: 'Call a Model', value: 'llm', action: 'Call a model' },
           { name: 'Check Only (Dry Run)', value: 'check', action: 'Check an action without running it' },
+          { name: 'Put Real Values Back (Rehydrate)', value: 'rehydrate', action: 'Put the real values back into an answer' },
           { name: 'Remove PII and Secrets', value: 'sanitize', action: 'Remove PII and secrets from data' },
           { name: 'Run a Tool', value: 'tool', action: 'Run an allowed MCP tool' },
           { name: 'Send a Webhook', value: 'webhook', action: 'Send data to a configured webhook' },
@@ -118,7 +119,16 @@ export class Vrymnox implements INodeType {
         name: 'input',
         type: 'json',
         default: '={{ $json }}',
-        description: 'The data to clean, the tool arguments, the model request body, or the webhook payload',
+        description: 'The data to clean, the tool arguments, the model request body, the webhook payload, or (for Put Real Values Back) the model answer with its tokens',
+      },
+      {
+        displayName: 'Map ID',
+        name: 'mapId',
+        type: 'string',
+        default: '',
+        placeholder: "={{ $('Vrymnox').item.json.map_id }}",
+        description: 'The map_id from the Remove PII and Secrets step that had Rehydrate on. The real values stay in your AI Node; this only points to them.',
+        displayOptions: { show: { operation: ['rehydrate'] } },
       },
       {
         displayName: 'Options',
@@ -134,6 +144,21 @@ export class Vrymnox implements INodeType {
             default: false,
             description:
               'Whether to pass the input on UNMASKED when the AI Node cannot be reached or its free allowance is used up. Warning: personal data and secrets can then reach the next step. Off (the default) masks the input locally with Safe Mode instead. Every passthrough is marked vrymdor.degraded = "passthrough" and logged.',
+          },
+          {
+            displayName: 'Rehydrate (Give the Answer Its Real Values Back)',
+            name: 'rehydrate',
+            type: 'boolean',
+            default: false,
+            description:
+              'Whether each private value gets its own numbered token, such as [REDACTED:EMAIL_1], so the real values can be put back. On Call a Model the answer comes back with the real values in one step. On Remove PII and Secrets the output carries a map_id; after your model step, add a Vrymnox step with Put Real Values Back and that map_id. The values never reach the model. Restore is strict: if the model makes up or damages a token, nothing is put back.',
+          },
+          {
+            displayName: 'Forget the Map After Restoring',
+            name: 'dropMap',
+            type: 'boolean',
+            default: true,
+            description: 'Whether Put Real Values Back deletes the map from your AI Node once the values are back. Turn off to restore more than one answer from the same map.',
           },
           {
             displayName: 'Shadow Mode (Report Only)',
@@ -203,16 +228,24 @@ export class Vrymnox implements INodeType {
         if (op === 'tool') action.tool = this.getNodeParameter('tool', i) as string
         if (op === 'check' && type === 'tool') action.tool = this.getNodeParameter('checkTool', i) as string
         if (op === 'llm') action.path = this.getNodeParameter('path', i) as string
+        if (op === 'rehydrate') delete action.upstream
         // A stable key per execution, node and item: n8n retries never run the action twice.
         const key = `${this.getExecutionId()}:${this.getNode().id}:${i}`.replace(/[^A-Za-z0-9._:-]/g, '-').slice(0, 128)
         const options = this.getNodeParameter('options', i, {}) as IDataObject
         const shadow = op === 'sanitize' && options.shadow === true
+        const params: IDataObject = shadow ? { dry_run: false, shadow: true } : { dry_run: op === 'check' }
+        if (options.rehydrate === true && op === 'sanitize' && !shadow) params.keep_map = true
+        if (options.rehydrate === true && op === 'llm') params.rehydrate = true
+        if (op === 'rehydrate') {
+          params.map_id = String(this.getNodeParameter('mapId', i) ?? '').trim()
+          params.drop_map = options.dropMap !== false
+        }
         const request = {
           node_version: '1',
           action,
           input,
           context: { platform: 'n8n', workflow: String(this.getWorkflow().id ?? '').slice(0, 200) },
-          params: shadow ? { dry_run: false, shadow: true } : { dry_run: op === 'check' },
+          params,
           idempotency_key: key.length >= 8 ? key : undefined,
         }
         const budget = Math.max(100, Number(options.timeoutMs ?? DEFAULT_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS)
@@ -226,6 +259,15 @@ export class Vrymnox implements INodeType {
           outage = outageFromError(error)
           if (outage === null) throw error
           out = { ok: false, decision: 'error' }
+        }
+        if (outage !== null && op === 'rehydrate') {
+          // The real values live only in the AI Node, so nothing can come back without it: the answer goes on with
+          // its tokens, never a guess.
+          results.push({ json: { ok: false, decision: 'error', output: input as IDataObject,
+            vrymdor: { degraded: 'no_rehydrate', reason: outage.reason,
+              message: 'The AI Node could not be reached, so no value was put back. The answer goes on with its tokens.' } },
+          pairedItem: { item: i } })
+          continue
         }
         if (outage !== null && shadow) {
           // Shadow mode changes nothing by choice, so an outage changes nothing either: no report this time.
