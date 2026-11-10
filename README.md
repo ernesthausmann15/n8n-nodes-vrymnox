@@ -102,17 +102,29 @@ Webhook** the action cannot run without the AI Node: the item returns `ok: false
 input masked locally as `output`, and `vrymdor.action_ran` (`false`, or `unknown` after a timeout, since the AI Node
 may have finished the action). Policy refusals and wrong credentials are not outages: they still raise an n8n error.
 
-**Allow Unmasked Passthrough on Outage** (Options, off by default) passes the input on unmasked during an outage
-instead, marked `vrymdor.degraded` = `passthrough`. Personal data and secrets can then reach the next step, so leave
-it off unless that step must never be delayed and never sees private data. A used up free allowance (402) is always
-masked, even with this option on. Every Safe Mode and passthrough item is written to the n8n log as a warning.
+Safe Mode never passes the input on unmasked. Every Safe Mode item is written to the n8n log as a warning.
 
-## Shadow mode (report only)
+## Check Only (dry run)
 
-Turn on **Options, Shadow Mode (Report Only)** on a Remove PII and Secrets step to see what the AI Node would mask
-without changing anything: the input goes on unchanged, and `redactions` and `report` say what would have been
-masked (categories, how sure each detector is, and a residual risk score). It is the zero risk way to read your own
-leak report before you turn masking on. Model, tool and webhook steps always mask; shadow mode never applies to them.
+**Check Only** runs every check on an action and sends nothing on. Its output is always masked, and `redactions`
+and `report` say what was found (categories, how sure each detector is, and a residual risk score). Choose
+**Data Only (No Upstream)** to see what your AI Node would mask in your own data before you turn masking on.
+
+## Put the real values back (Rehydrate)
+
+With **Options, Rehydrate** on, each private value gets its own numbered token, such as `[REDACTED:EMAIL_1]`, and
+the model never sees the real value. On **Call a Model** the answer comes back with the real values in one step. On
+**Remove PII and Secrets** the output carries a `map_id`; after your own model step, add a Vrymnox step with **Put
+Real Values Back** and that `map_id`.
+
+* Restore is all or nothing: if the model makes up, damages or swaps a token, nothing is put back and the step
+  raises an error (`rehydrate_check_failed`). A refused restore stops the workflow unless **Continue On Fail** is on;
+  retry the model once, then send the item to a person.
+* Secrets (API keys, tokens, private keys and your secret patterns) are never put back.
+* **Options, Only For**: who the answer is for, by their real details, such as `{{ $json.customer_email }}`.
+  Separate more than one with commas. Only that person's details can come back, so a reply to one customer can
+  never carry another customer's details. Your rules can require it on every restore.
+* The list of real values never leaves your AI Node.
 
 ## Output
 
@@ -124,6 +136,11 @@ an idempotency key, so the action never runs twice.
 
 ## Changes
 
+* **1.0.5**: security release. **Only For** on Put Real Values Back and on Call a Model with Rehydrate. **Check
+  Only** can check data with no upstream (Data Only). Safe Mode masks phone numbers. Removed: Allow Unmasked
+  Passthrough on Outage (an outage always masks) and Shadow Mode (use Check Only, whose output is always masked);
+  a step saved with either option keeps working and is masked.
+* **1.0.4**: Rehydrate: numbered tokens and Put Real Values Back.
 * **1.0.3**: Safe Mode (above), with the Timeout Budget and Allow Unmasked Passthrough on Outage options; Shadow
   mode (report only) and the sanitization report. A held action now returns at once and the workflow
   continues; the node never waits on anyone. The
@@ -138,6 +155,12 @@ Built against n8n-workflow 2.x and n8n nodes API version 1. Requires Node.js 20.
 ## License
 
 [MIT](LICENSE), Vrymnox Systems LLC.
+
+## License and terms
+
+Copyright (c) 2026 Vrymnox Systems LLC. This client is open source under the MIT License (LICENSE). Using the
+Vrymdor AI Node service it connects to is governed by the Vrymdor Master Subscription Agreement
+(https://vrymdor.com/msa) and the Acceptable Use Policy in the agreement set you accept when you sign up.
 
 ## License and terms
 

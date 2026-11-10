@@ -77,10 +77,12 @@ export class Vrymnox implements INodeType {
         type: 'options',
         default: 'tool',
         options: [
-          { name: 'Tool', value: 'tool' },
+          { name: 'Data Only (No Upstream)', value: 'sanitize' },
           { name: 'Model', value: 'llm' },
+          { name: 'Tool', value: 'tool' },
           { name: 'Webhook', value: 'webhook' },
         ],
+        description: 'Check Only runs every check and sends nothing on. Its output is always masked, and it reports what was found. Data Only needs no upstream: use it to see what your AI Node would mask in your own data.',
         displayOptions: { show: { operation: ['check'] } },
       },
       {
@@ -90,7 +92,7 @@ export class Vrymnox implements INodeType {
         default: '',
         placeholder: 'github',
         description: 'The name of an upstream configured on your gateway (VRYMNOX_UPSTREAMS)',
-        displayOptions: { show: { operation: ['tool', 'llm', 'webhook', 'check'] } },
+        displayOptions: { show: { operation: ['tool', 'llm', 'webhook', 'check'] }, hide: { checkType: ['sanitize'] } },
       },
       {
         displayName: 'Tool',
@@ -138,20 +140,21 @@ export class Vrymnox implements INodeType {
         default: {},
         options: [
           {
-            displayName: 'Allow Unmasked Passthrough on Outage',
-            name: 'allowPassthrough',
-            type: 'boolean',
-            default: false,
-            description:
-              'Whether to pass the input on UNMASKED when the AI Node cannot be reached or its free allowance is used up. Warning: personal data and secrets can then reach the next step. Off (the default) masks the input locally with Safe Mode instead. Every passthrough is marked vrymdor.degraded = "passthrough" and logged.',
-          },
-          {
             displayName: 'Rehydrate (Give the Answer Its Real Values Back)',
             name: 'rehydrate',
             type: 'boolean',
             default: false,
             description:
-              'Whether each private value gets its own numbered token, such as [REDACTED:EMAIL_1], so the real values can be put back. On Call a Model the answer comes back with the real values in one step. On Remove PII and Secrets the output carries a map_id; after your model step, add a Vrymnox step with Put Real Values Back and that map_id. The values never reach the model. Restore is strict: if the model makes up or damages a token, nothing is put back.',
+              'Whether each private value gets its own numbered token, such as [REDACTED:EMAIL_1], so the real values can be put back. On Call a Model the answer comes back with the real values in one step. On Remove PII and Secrets the output carries a map_id; after your model step, add a Vrymnox step with Put Real Values Back and that map_id. The values never reach the model. Restore is all or nothing: if the model makes up or damages a token, nothing is put back. Secrets are never put back.',
+          },
+          {
+            displayName: 'Only For',
+            name: 'onlyFor',
+            type: 'string',
+            default: '',
+            placeholder: '={{ $json.customer_email }}',
+            description:
+              "For Put Real Values Back, and Call a Model with Rehydrate on: who the answer is for, by their real details, such as their email address. Separate more than one with commas. Only that person's details can come back; if another person's are in the answer, nothing is put back. The details stay in your AI Node and are never logged.",
           },
           {
             displayName: 'Forget the Map After Restoring',
@@ -159,14 +162,6 @@ export class Vrymnox implements INodeType {
             type: 'boolean',
             default: true,
             description: 'Whether Put Real Values Back deletes the map from your AI Node once the values are back. Turn off to restore more than one answer from the same map.',
-          },
-          {
-            displayName: 'Shadow Mode (Report Only)',
-            name: 'shadow',
-            type: 'boolean',
-            default: false,
-            description:
-              'Whether Remove PII and Secrets only reports what it would mask (vrymdor report and redactions) and passes the input on unchanged. Use it to see your own leak report before you turn masking on. Off (the default) masks. Model, tool and webhook calls always mask.',
           },
           {
             displayName: 'Timeout Budget (Ms)',
@@ -232,14 +227,15 @@ export class Vrymnox implements INodeType {
         // A stable key per execution, node and item: n8n retries never run the action twice.
         const key = `${this.getExecutionId()}:${this.getNode().id}:${i}`.replace(/[^A-Za-z0-9._:-]/g, '-').slice(0, 128)
         const options = this.getNodeParameter('options', i, {}) as IDataObject
-        const shadow = op === 'sanitize' && options.shadow === true
-        const params: IDataObject = shadow ? { dry_run: false, shadow: true } : { dry_run: op === 'check' }
-        if (options.rehydrate === true && op === 'sanitize' && !shadow) params.keep_map = true
+        const params: IDataObject = { dry_run: op === 'check' }
+        if (options.rehydrate === true && op === 'sanitize') params.keep_map = true
         if (options.rehydrate === true && op === 'llm') params.rehydrate = true
         if (op === 'rehydrate') {
           params.map_id = String(this.getNodeParameter('mapId', i) ?? '').trim()
           params.drop_map = options.dropMap !== false
         }
+        const onlyFor = onlyForList(options.onlyFor)
+        if (onlyFor.length && (op === 'rehydrate' || (op === 'llm' && params.rehydrate === true))) params.only_for = onlyFor
         const request = {
           node_version: '1',
           action,
@@ -269,17 +265,9 @@ export class Vrymnox implements INodeType {
           pairedItem: { item: i } })
           continue
         }
-        if (outage !== null && shadow) {
-          // Shadow mode changes nothing by choice, so an outage changes nothing either: no report this time.
-          results.push({ json: { ok: true, decision: 'allow', output: input as IDataObject, redactions: {},
-            vrymdor: { degraded: 'shadow', reason: outage.reason,
-              message: 'Shadow mode: the AI Node could not be reached, so no report was made and the input went on unchanged, as shadow mode does.' } },
-          pairedItem: { item: i } })
-          continue
-        }
         if (outage !== null) {
           // Never stop, never send raw: the item is masked locally and the workflow goes on.
-          const item = safeModeItem(op, input, outage, options.allowPassthrough === true)
+          const item = safeModeItem(op, input, outage)
           this.logger?.warn(`Vrymdor Safe Mode (${outage.reason}): ${(item.vrymdor as IDataObject).degraded}`, {
             node: this.getNode().name, item: i })
           results.push({ json: item, pairedItem: { item: i } })
@@ -313,6 +301,12 @@ export class Vrymnox implements INodeType {
     }
     return [results]
   }
+}
+
+/** Only For as typed: one value, several separated by commas or new lines, or a list from an expression. */
+export function onlyForList(value: unknown): string[] {
+  const parts = Array.isArray(value) ? value.map(String) : typeof value === 'string' ? value.split(/[,\n]/) : []
+  return parts.map((v) => v.trim()).filter((v) => v.length > 0).slice(0, 50)
 }
 
 function safeParse(text: string): unknown {
@@ -387,19 +381,15 @@ const REASON_TEXT: Record<Outage['reason'], string> = {
   agent_limit: "this agent is past the Community plan's agent limit",
 }
 
-/** The item Safe Mode returns: the input masked locally (or raw, only with passthrough on), marked degraded. */
-export function safeModeItem(op: string, input: unknown, outage: Outage, allowPassthrough: boolean): IDataObject {
+/** The item Safe Mode returns: the input masked locally, marked degraded. It never passes the input on unmasked. */
+export function safeModeItem(op: string, input: unknown, outage: Outage): IDataObject {
   const plan = outage.reason === 'quota_exhausted' || outage.reason === 'agent_limit'
-  // Passthrough is for outages only: a used up allowance is always masked locally.
-  const passthrough = allowPassthrough && !plan
-  const masked = passthrough ? { output: input, redactions: {} } : maskValue(input)
+  const masked = maskValue(input)
   const forward = op !== 'sanitize'
   const vrymdor: IDataObject = {
-    degraded: passthrough ? 'passthrough' : 'safe_mode',
+    degraded: 'safe_mode',
     reason: outage.reason,
-    message: passthrough
-      ? `Unmasked passthrough: ${REASON_TEXT[outage.reason]}, and this step allows passthrough on outage, so the input went on unmasked.`
-      : `Safe Mode: ${REASON_TEXT[outage.reason]}, so this item was masked locally and the workflow continued.`,
+    message: `Safe Mode: ${REASON_TEXT[outage.reason]}, so this item was masked locally and the workflow continued.`,
     action_ran: !forward ? null : op !== 'check' && outage.reason === 'timeout' ? 'unknown' : false,
   }
   if (plan) {
@@ -414,7 +404,7 @@ export function safeModeItem(op: string, input: unknown, outage: Outage, allowPa
     decision: 'safe_mode',
     output: masked.output as IDataObject,
     redactions: masked.redactions,
-    rules: [passthrough ? 'safe_mode_passthrough' : 'safe_mode'],
+    rules: ['safe_mode'],
     hold_id: null,
     audit: null,
     error: forward

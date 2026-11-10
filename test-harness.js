@@ -58,7 +58,8 @@ function makeContext({ url, agentId, agentSecret, params }) {
     getInputData: () => [{ json: {} }],
     getNodeParameter: (name, _i, fallback) => (name in params ? params[name] : fallback),
     getExecutionId: () => 'exec-123',
-    getNode: () => ({ id: 'node-abc', name: 'Vrymnox', type: 'vrymnox', typeVersion: 1, parameters: {} }),
+    // params.nodeId: a second Vrymnox step in the same workflow has its own id (and so its own idempotency key).
+    getNode: () => ({ id: params.nodeId || 'node-abc', name: 'Vrymnox', type: 'vrymnox', typeVersion: 1, parameters: {} }),
     getWorkflow: () => ({ id: 'wf-1' }),
     continueOnFail: () => params.continueOnFail === true,
     logger: { warn: (msg) => state.warnings.push(msg), info: () => {}, debug: () => {}, error: () => {} },
@@ -129,7 +130,7 @@ async function safeModeTests() {
         }
         const doc = JSON.parse(raw || '{}')
         if (mode === 'hold') return send(202, { node_version: '1', ok: true, decision: 'hold', hold_id: 'h-1', output: null, redactions: {}, rules: ['require_approval'] })
-        if (mode === 'echo') return send(200, { node_version: '1', ok: true, decision: 'allow', output: doc.params, redactions: {}, rules: [] })
+        if (mode === 'echo') return send(200, { node_version: '1', ok: true, decision: 'allow', output: { params: doc.params, action: doc.action }, redactions: {}, rules: [] })
         return send(200, { node_version: '1', ok: true, decision: 'allow', output: `gateway:${JSON.stringify(doc.input)}`,
           redactions: {}, rules: [], audit: { trace_id: 't' } })
       })
@@ -248,7 +249,7 @@ async function safeModeTests() {
     } finally { g.close() }
   })
 
-  test('402 with passthrough on still masks (passthrough is for outages only)', async () => {
+  test('a 402 always masks, even with the retired passthrough option still saved on the step', async () => {
     const g = await stub('quota')
     try {
       const out = await run(g.url, { operation: 'sanitize', input: sample, options: { allowPassthrough: true } })
@@ -268,12 +269,11 @@ async function safeModeTests() {
     }
   })
 
-  test('passthrough only when the option is explicitly on, and it says so', async () => {
+  test('an outage never passes the input on unmasked, whatever an old step has saved', async () => {
     const out = await run(await deadUrl(), { operation: 'sanitize', input: sample, options: { allowPassthrough: true } })
-    assert.equal(out.vrymdor.degraded, 'passthrough')
-    assert.deepEqual(out.output, sample)
-    assert.deepEqual(out.redactions, {})
-    assert.ok(out.vrymdor.message.startsWith('Unmasked passthrough'))
+    assert.equal(out.vrymdor.degraded, 'safe_mode')
+    assert.ok(!JSON.stringify(out.output).includes('jane@example.com'))
+    assert.deepEqual(out.rules, ['safe_mode'])
   })
 
   test('forward actions on outage: not run, input masked, ok false, workflow continues', async () => {
@@ -305,17 +305,46 @@ async function safeModeTests() {
     } finally { server.close() }
   })
 
-  test('shadow mode: sends shadow on Remove PII only, and an outage passes the input on unchanged', async () => {
+  test('shadow mode is gone: an old step never sends shadow, and an outage masks', async () => {
     const g = await stub('echo')
     try {
       const out = await run(g.url, { operation: 'sanitize', input: { x: 1 }, options: { shadow: true } })
-      assert.deepEqual(out.output, { dry_run: false, shadow: true })
-      const llm = await run(g.url, { operation: 'llm', upstream: 'anthropic', path: 'v1/messages', input: { x: 1 }, options: { shadow: true } })
-      assert.equal(llm.output && llm.output.shadow, undefined)
+      assert.deepEqual(out.output.params, { dry_run: false })
     } finally { g.close() }
     const down = await run(await deadUrl(), { operation: 'sanitize', input: sample, options: { shadow: true } })
-    assert.equal(down.vrymdor.degraded, 'shadow')
-    assert.deepEqual(down.output, sample)
+    assert.equal(down.vrymdor.degraded, 'safe_mode')
+    assert.ok(!JSON.stringify(down.output).includes('jane@example.com'))
+  })
+
+  test('Check Only, Data Only: a dry run of the data with no upstream', async () => {
+    const g = await stub('echo')
+    try {
+      const out = await run(g.url, { operation: 'check', checkType: 'sanitize', upstream: 'ignored', input: { x: 1 } })
+      assert.deepEqual(out.output.action, { type: 'sanitize' })
+      assert.deepEqual(out.output.params, { dry_run: true })
+    } finally { g.close() }
+  })
+
+  test('Only For goes on restores only, as a list', async () => {
+    const g = await stub('echo')
+    try {
+      const back = await run(g.url, { operation: 'rehydrate', mapId: 'map_abcdefgh12', input: 'x',
+        options: { onlyFor: ' jane@acme.io , +1 402 555 0123 ' } })
+      assert.deepEqual(back.output.params.only_for, ['jane@acme.io', '+1 402 555 0123'])
+      const llm = await run(g.url, { operation: 'llm', upstream: 'anthropic', path: 'v1/messages', input: { x: 1 },
+        options: { rehydrate: true, onlyFor: 'jane@acme.io' } })
+      assert.deepEqual(llm.output.params.only_for, ['jane@acme.io'])
+      const plain = await run(g.url, { operation: 'llm', upstream: 'anthropic', path: 'v1/messages', input: { x: 1 },
+        options: { onlyFor: 'jane@acme.io' } })
+      assert.equal(plain.output.params.only_for, undefined)
+      const masked = await run(g.url, { operation: 'sanitize', input: { x: 1 }, options: { onlyFor: 'jane@acme.io' } })
+      assert.equal(masked.output.params.only_for, undefined)
+    } finally { g.close() }
+  })
+
+  test('Safe Mode masks phone numbers too', async () => {
+    const out = await run(await deadUrl(), { operation: 'sanitize', input: { note: 'call (402) 555-0123' } })
+    assert.equal(out.output.note, 'call [REDACTED:PHONE]')
   })
 
   test('a held action returns at once: no waiting, nobody asked, the workflow continues', async () => {

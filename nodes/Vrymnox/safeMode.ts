@@ -2,8 +2,8 @@
  * Safe Mode: the local fallback the node uses when the Vrymdor AI Node (gateway) cannot answer in time, is
  * unreachable, or refuses because the Community plan's monthly requests are used up (HTTP 402).
  *
- * It holds only public-grade detectors: well known key prefixes and public formats (email addresses, card numbers
- * that pass the Luhn check, US Social Security numbers, PEM private keys, OpenAI, Anthropic, Stripe, GitHub, AWS,
+ * It holds only public-grade detectors: well known key prefixes and public formats (email addresses, phone numbers,
+ * card numbers that pass the Luhn check, US Social Security numbers, PEM private keys, OpenAI, Anthropic, Stripe, GitHub, AWS,
  * Google and Slack keys, bearer tokens and JWTs), plus string values stored under obviously secret field names.
  * It has no runtime dependencies and none of the gateway's own engine. It masks aggressively on purpose: during an
  * outage over-masking is better than a leak. Masked values use the gateway's format, for example [REDACTED:EMAIL].
@@ -31,6 +31,9 @@ const PATTERNS: ReadonlyArray<readonly [string, string]> = [
   ['EMAIL', String.raw`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b`],
   ['SSN', String.raw`\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b`],
   ['CREDIT_CARD', String.raw`\b\d(?:[ -]?\d){12,18}\b`],
+  // The gateway's PHONE detector: US and Canada with separators, and international numbers that start with +.
+  ['PHONE', String.raw`(?<![\w+.-])(?:\+?1[ .-]?)?(?:\([2-9]\d{2}\)[ .-]?|[2-9]\d{2}[ .-])[2-9]\d{2}[ .-]\d{4}(?![\w-])` +
+    String.raw`|(?<![\w+])\+(?=(?:\d[ .-]?){7,14}\d(?!\d))[2-9]\d{0,2}(?:[ .-]\d{1,6}){2,6}(?![\w-])`],
 ]
 const COMBINED = PATTERNS.map(([name, src]) => `(?<${name}>${src})`).join('|')
 
