@@ -1,10 +1,12 @@
-"""Builds the two n8n workflow files to import in examples/ (python3 build_examples.py [extra output folder ...]).
+"""Builds the three n8n workflow files to import in examples/ (python3 build_examples.py [extra output folder ...]).
 
 - vrymdor-node-workflow.json: the Vrymnox community node (self-hosted n8n, Settings, Community Nodes,
   n8n-nodes-vrymnox). Start, sample text, the node removes personal data and secrets, then (off until an upstream
   named `anthropic` is on the gateway) a model call through the node.
 - vrymdor-n8n-cloud-workflow.json: the same for n8n Cloud until n8n verifies the community node: a token step whose
   agent secret is kept in n8n's Custom Auth credential, then one Code step (examples/src/vrymdor_ai_node.js).
+- vrymdor-support-email-workflow.json: the n8n Cloud steps on a customer support email, ending in what an AI
+  step would get (the masked prompt) and where the reply goes (the real address).
 
 The files hold no credential ids and no secrets: n8n asks for the credential on the first run. Node ids are
 stable (uuid5), so a rebuild changes nothing unless the workflow changed. Text a person reads follows the repo's
@@ -134,7 +136,61 @@ def cloud() -> dict:
                     chain("Start", "Sample text", "Vrymdor token", "Vrymdor AI Node"))
 
 
-FILES = {"vrymdor-node-workflow.json": self_hosted, "vrymdor-n8n-cloud-workflow.json": cloud}
+SUPPORT_EMAIL = ("Hi, I was charged twice for order 1042 on card 4242 4242 4242 4242. Please refund me and reply "
+                 "to jane@example.com. Thanks, Jane")
+
+
+def support_email() -> dict:
+    """A customer support email on n8n Cloud: the email comes in, the Vrymdor steps mask its body, and the last
+    step shows exactly what an AI step would get (the masked prompt) next to where the reply goes (the real
+    address, kept in the workflow). Runs with no model and no mail account, so anyone can try it in one click."""
+    w = "support"
+    code = (OUT / "src" / "vrymdor_ai_node.js").read_text().replace("items_from: 'Sample text'",
+                                                                    "items_from: 'Support email'")
+    nodes = [
+        note(w, "How to set it up", (-560, -340),
+             "## Customer support email, through your Vrymdor AI Node\n"
+             "1. Vrymdor app: **AI agents**, **Connect your AI Node**, **n8n Cloud**.\n"
+             "2. **Vrymdor token** step: paste **URL for the Vrymdor token step** into **URL**.\n"
+             "3. Same step: **Custom Auth**, **Create new credential**, paste **Vrymdor token credential "
+             "(Custom Auth JSON)** from the same card, **Save**. Your Agent ID and Agent Secret stay in the "
+             "credential, never in the workflow.\n"
+             "4. **Execute workflow**.\n\n"
+             "**For your AI** shows what an AI step gets: the email with `[REDACTED:EMAIL]` and "
+             "`[REDACTED:CREDIT_CARD]`. **reply_to** keeps the real address, so the reply still reaches the "
+             "customer.",
+             width=520, height=460),
+        note(w, "Make it yours", (900, -340),
+             "## Make it yours\n"
+             "Swap **Start** and **Support email** for your mail trigger (Gmail or Outlook), then set "
+             "`items_from` in **Vrymdor AI Node** to that step's name and `field` to its body field.\n"
+             "After **For your AI**, add your AI step (it reads `prompt`) and your send step (To: `reply_to`).",
+             width=400, height=300),
+        node(w, "Start", "n8n-nodes-base.manualTrigger", 1, (0, 0), {}),
+        setter(w, "Support email", (220, 0),
+               {"from": "jane@example.com", "subject": "Charged twice", "text": SUPPORT_EMAIL}),
+        node(w, "Vrymdor token", "n8n-nodes-base.httpRequest", 4.2, (440, 0), {
+            "method": "POST",
+            "url": "https://node.vrymdor.com/t/PASTE_YOUR_NODE_ID/v1/token",
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpCustomAuth",
+            "sendBody": True,
+            "specifyBody": "json",
+            "jsonBody": "{}",
+            "options": {},
+        }, executeOnce=True),
+        node(w, "Vrymdor AI Node", "n8n-nodes-base.code", 2, (660, 0), {"jsCode": code}),
+        setter(w, "For your AI", (880, 0), {
+            "prompt": "=Write a short, kind reply to this customer email:\n{{ $json.text }}",
+            "reply_to": "={{ $json.from }}",
+        }),
+    ]
+    return workflow("Vrymdor AI Node: customer support email", nodes,
+                    chain("Start", "Support email", "Vrymdor token", "Vrymdor AI Node", "For your AI"))
+
+
+FILES = {"vrymdor-node-workflow.json": self_hosted, "vrymdor-n8n-cloud-workflow.json": cloud,
+         "vrymdor-support-email-workflow.json": support_email}
 
 
 def build(extra: list[Path]) -> list[Path]:

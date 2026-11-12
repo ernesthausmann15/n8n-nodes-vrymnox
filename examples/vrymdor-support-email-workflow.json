@@ -1,0 +1,199 @@
+{
+  "name": "Vrymdor AI Node: customer support email",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Customer support email, through your Vrymdor AI Node\n1. Vrymdor app: **AI agents**, **Connect your AI Node**, **n8n Cloud**.\n2. **Vrymdor token** step: paste **URL for the Vrymdor token step** into **URL**.\n3. Same step: **Custom Auth**, **Create new credential**, paste **Vrymdor token credential (Custom Auth JSON)** from the same card, **Save**. Your Agent ID and Agent Secret stay in the credential, never in the workflow.\n4. **Execute workflow**.\n\n**For your AI** shows what an AI step gets: the email with `[REDACTED:EMAIL]` and `[REDACTED:CREDIT_CARD]`. **reply_to** keeps the real address, so the reply still reaches the customer.",
+        "height": 460,
+        "width": 520
+      },
+      "id": "e56e8f62-57c7-578a-a7b7-2355ba25b09a",
+      "name": "How to set it up",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Make it yours\nSwap **Start** and **Support email** for your mail trigger (Gmail or Outlook), then set `items_from` in **Vrymdor AI Node** to that step's name and `field` to its body field.\nAfter **For your AI**, add your AI step (it reads `prompt`) and your send step (To: `reply_to`).",
+        "height": 300,
+        "width": 400
+      },
+      "id": "c2a71a89-d8fa-51e1-b874-af2a1689e082",
+      "name": "Make it yours",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        900,
+        -340
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "bb3275d2-f03d-5920-8706-89d19dcd6493",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0acf3d34-5a4c-5c7e-9e1e-6ea2704c9636",
+              "name": "from",
+              "value": "jane@example.com",
+              "type": "string"
+            },
+            {
+              "id": "54b8c9e8-a5a0-572c-a4ca-bf411ad3a346",
+              "name": "subject",
+              "value": "Charged twice",
+              "type": "string"
+            },
+            {
+              "id": "be39a702-3932-5c4f-a84a-475380f8ff1b",
+              "name": "text",
+              "value": "Hi, I was charged twice for order 1042 on card 4242 4242 4242 4242. Please refund me and reply to jane@example.com. Thanks, Jane",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "793a6a73-8f8f-5acb-89e8-1103bd684ecb",
+      "name": "Support email",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://node.vrymdor.com/t/PASTE_YOUR_NODE_ID/v1/token",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "id": "ca92a9a7-967e-53c7-82e1-a24a8cdc362a",
+      "name": "Vrymdor token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============ Vrymdor AI Node ============\n// Your agent id and secret live only in the Custom Auth credential of the Vrymdor token step, never here, so\n// they are not shown in this step and do not leave with the workflow when it is shared or exported.\nconst SETTINGS = {\n  // The field of each item to clean. The cleaned text replaces it, so the next step gets it as before.\n  field: 'text',\n  // The step whose items this step cleans: the step just before Vrymdor token.\n  items_from: 'Support email',\n};\n// =========================================\n// Every item's field goes through your AI Node: personal data and secrets are removed and your policy applies\n// before anything reaches the next step (for example a model). The rest of the item is passed on untouched, so a\n// later step (an email step's To field, say) can still use it. Each result carries `vrymdor`: the decision and the\n// count of what was removed. A refusal stops the workflow with the node's reason.\nconst tokenStep = $('Vrymdor token');\n// The node address is the one in the Vrymdor token step's URL, so it is pasted once.\nconst base = String((tokenStep.params && tokenStep.params.url) || '').trim()\n  .replace(/^=/, '').replace(/\\/+$/, '').replace(/\\/v1\\/token$/, '');\nif (!/^https?:\\/\\/[^/{}]+/.test(base) || base.includes('PASTE') || base.includes('{{')) {\n  throw new Error('Vrymdor AI Node: put your node address in the URL of the Vrymdor token step, ' +\n    'for example https://node.vrymdor.com/t/your-node-id/v1/token (Vrymdor app, Home base, Hosted node).');\n}\nconst token = tokenStep.first().json.access_token;\nif (!token) {\n  throw new Error('Vrymdor AI Node: the Vrymdor token step returned no access_token. Open it, check its Custom Auth ' +\n    'credential and run it again.');\n}\nconst out = [];\nfor (const item of $(SETTINGS.items_from).all()) {\n  const value = item.json[SETTINGS.field];\n  if (value === undefined) throw new Error(`Vrymdor AI Node: the item has no \"${SETTINGS.field}\" field (change field in the settings).`);\n  const res = await this.helpers.httpRequest({ method: 'POST', url: `${base}/v1/node/run`, json: true, timeout: 15000,\n    headers: { Authorization: `Bearer ${token}` }, ignoreHttpStatusErrors: true,\n    body: { node_version: '1', action: { type: 'sanitize' }, input: value, context: { platform: 'n8n' } } });\n  if (!res || !res.ok) {\n    const e = (res && res.error) || {};\n    throw new Error(`Vrymdor ${e.code || 'error'}: ${e.message || 'the node refused the request.'}`);\n  }\n  out.push({ json: { ...item.json, [SETTINGS.field]: res.output,\n    vrymdor: { decision: res.decision, redactions: res.redactions || {}, audit: res.audit || null } } });\n}\nreturn out;\n"
+      },
+      "id": "11332b59-afd6-5124-8257-6aaa8ad0e367",
+      "name": "Vrymdor AI Node",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4b246d8e-1250-5a7d-98a0-9693235bb4ff",
+              "name": "prompt",
+              "value": "=Write a short, kind reply to this customer email:\n{{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "1ba2b04d-eb99-577f-8d5f-96521b633ab8",
+              "name": "reply_to",
+              "value": "={{ $json.from }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6877a95e-d035-59d9-bfc3-acf2282ece9d",
+      "name": "For your AI",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Support email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Support email": {
+      "main": [
+        [
+          {
+            "node": "Vrymdor token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vrymdor token": {
+      "main": [
+        [
+          {
+            "node": "Vrymdor AI Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vrymdor AI Node": {
+      "main": [
+        [
+          {
+            "node": "For your AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

@@ -50,6 +50,7 @@ menu at the top right, choose **Import from File** and pick the file.
 | ---- | --- | ------------ |
 | [`vrymdor-node-workflow.json`](examples/vrymdor-node-workflow.json) | self-hosted n8n with this node installed | Sample text, then **Remove PII and Secrets**, then an optional model call through the node |
 | [`vrymdor-n8n-cloud-workflow.json`](examples/vrymdor-n8n-cloud-workflow.json) | n8n Cloud (until n8n verifies this node) | A **Vrymdor token** step (your node address in its URL, your agent in its Custom Auth credential), then the **Vrymdor AI Node** step. The note on the canvas has the steps |
+| [`vrymdor-support-email-workflow.json`](examples/vrymdor-support-email-workflow.json) | n8n Cloud | A customer support email through the same two Vrymdor steps. **For your AI** shows what an AI step gets (the masked email) and **reply_to** keeps the real address for the reply |
 
 Each has a note on the canvas with its three steps. Run it and the output shows `[REDACTED:EMAIL]` and
 `[REDACTED:CREDIT_CARD]` where the sample had an email address and a card number.
